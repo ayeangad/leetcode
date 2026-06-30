@@ -13,11 +13,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     return res.status(409).json({ message: "Authorization Missing!" })
   }
 
-  if (!authorization.startsWith("Bearer ")) {
+  if (!authorization.startsWith('Bearer ')) {
     return res.status(409).json({ message: "Bearer Missing" })
   }
 
-  const token = authorization.split('')[1]
+  const token = authorization.split(' ')[1]
   if (!token) {
     return res.status(409).json({ message: "Token undefined" })
   }
@@ -34,6 +34,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     }
   } catch (error) {
     console.error(error)
+    res.status(409).json({ message: "JWT error" })
   }
 }
 

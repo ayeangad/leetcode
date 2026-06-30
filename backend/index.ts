@@ -1,25 +1,23 @@
 import express from "express"
 import { createClient } from "redis"
-import { Pool } from "pg"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { PrismaClient } from "./generated/prisma/client"
 import jwt from "jsonwebtoken"
-import { envFiles } from "./env.ts"
+import { envFiles } from "./auth/env.ts"
+import { authMiddleware } from "./auth/middleware.ts"
 
-const pool = new Pool({ connectionString: envFiles.databaseUrl })
-const adapter = new PrismaPg(pool)
+const adapter = new PrismaPg({ connectionString: envFiles.databaseUrl, ssl: true })
+console.log("DB URL:", envFiles.databaseUrl)
 const prisma = new PrismaClient({ adapter })
 
 const client = await createClient()
   .connect()
 
-
 const app = express()
 app.use(express.json())
 
 
-
-app.post("signup", async (req, res) => {
+app.post("/signup", async (req, res) => {
   const { username, password } = req.body
 
   if (await prisma.user.findUnique({ where: { username } })) {
@@ -36,9 +34,9 @@ app.post("signup", async (req, res) => {
   res.status(200).json({ message: "You've signed up!" })
 })
 
-app.post("signin", async (req, res) => {
+app.post("/signin", async (req, res) => {
   const { username, password } = req.body
-  const userExists = await prisma.user.findUnique({ where: username })
+  const userExists = await prisma.user.findUnique({ where: { username } })
 
   if (!userExists) {
     return res.status(403).json({ message: "User doesn't exists" })
@@ -49,22 +47,47 @@ app.post("signin", async (req, res) => {
   }
 
   const token = jwt.sign({
-    username: userExists.username
+    userId: userExists.id
   }, envFiles.jwtSecret)
 
   res.status(200).json({ token })
 })
 
 
-app.post("submissions", (req, res) => {
+app.post("/submissions", authMiddleware, async (req, res) => {
+  const userId = req.userId
+  const code = req.body.code
+  const language = req.body.language
+
+
+  await prisma.submission.create({
+    data: {
+      user: {
+        connect: {
+          id: userId
+        }
+      },
+      code,
+      language,
+    }
+  })
+
+  client.lPush("problems", JSON.stringify({
+    userId, code, language
+  }))
+
+  res.json({
+    message: "Processing"
+  })
+
 
 })
 
-app.get("submissions/:submissionsId", (req, res) => {
+app.get("/submissions/:submissionsId", (req, res) => {
 
 })
 
 
-app.listen(3000)
+app.listen(3000, () => console.log("backend listening to 3000"))
 
 
