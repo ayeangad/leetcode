@@ -22,17 +22,29 @@ client.connect()
 
       async function tillCompeted(response: any) {
         await new Promise<void>(resolve => {
-          response.on("close", async () => {
-            await prisma.submission.update({
-              where: {
-                id: submissionId
-              },
-              data: {
-                status: "Success",
-                output: finalResult
-              }
-            })
-            resolve()
+          response.on("exit", async (exitCode: number) => {
+            if (exitCode === 0) {
+              await prisma.submission.update({
+                where: {
+                  id: submissionId
+                },
+                data: {
+                  status: "Success",
+                  output: finalResult
+                }
+              })
+              resolve()
+            } else {
+              await prisma.submission.update({
+                where: {
+                  id: submissionId
+                },
+                data: {
+                  status: "Failure"
+                }
+              })
+              console.log("Failure to execute code")
+            }
           })
         })
       }
@@ -96,13 +108,37 @@ client.connect()
 
         const filePath = __dirname + "/code/a.cpp"
         fs.writeFileSync(filePath, code)
-        spawn("g++", [filePath, "-o", "./code/out"])
-        await new Promise((r) => setTimeout(r, 3000))
+        const responseCompiler = spawn("g++", [filePath, "-o", "./code/out"])
+        let exitCodeCompiler = null
+        await new Promise<void>(resolve => {
+          responseCompiler.on("exit", async (exitCode) => {
+            exitCodeCompiler = exitCode
+            if (exitCode !== 0) {
+              await prisma.submission.update({
+                where: {
+                  id: submissionId
+                },
+                data: {
+                  status: "Failure"
+                }
+              })
+            }
+            resolve()
+          })
+        })
+
+        if (exitCodeCompiler !== 0) {
+          console.log("Failure")
+          continue;
+        }
+
         const response = spawn("./code/out")
         response.stdout.on("data", (chunk) => {
           finalResult += chunk.toString()
         })
+
         await tillCompeted(response)
+
         if (Date.now() - startTime > 10000) {
           await prisma.submission.update({
             where: {
@@ -123,8 +159,31 @@ client.connect()
         console.log("running rust code")
         const filePath = __dirname + "/code/a.rs"
         fs.writeFileSync(filePath, code)
-        spawn("rustc", [filePath, "-o", "./code/rs-out"])
-        await new Promise((r) => setTimeout(r, 3000))
+        const responseCompiler = spawn("rustc", [filePath, "-o", "./code/rs-out"])
+        let exitCodeCompiler = null
+
+        await new Promise<void>(resolve => {
+          responseCompiler.on("exit", async (exitCode) => {
+            exitCodeCompiler = exitCode
+            if (exitCode !== 0) {
+              await prisma.submission.update({
+                where: {
+                  id: submissionId
+                },
+                data: {
+                  status: "Failure"
+                }
+              })
+            }
+            resolve()
+          })
+        })
+
+        if (exitCodeCompiler !== 0) {
+          console.log("Failure")
+          continue;
+        }
+
         const response = spawn("./code/rs-out")
         response.stdout.on("data", (chunk) => {
           finalResult += chunk.toString()
